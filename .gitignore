@@ -1,0 +1,7 @@
+echo ".DS_Store
+  xcuserdata/
+  DerivedData/
+  build/
+  .swiftpm/
+  .swiftlint.yml
+  " > .gitignore
