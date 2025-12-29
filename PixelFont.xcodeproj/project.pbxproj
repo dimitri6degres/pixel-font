@@ -6,8 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		32B8CCC72F012866000C25FD /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 32B8CCC62F012866000C25FD /* README.md */; };
+		32B8CCC82F012866000C25FD /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 32B8CCC52F012866000C25FD /* LICENSE */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		327009352EFB4C3D0040FC5F /* pixelFont.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = pixelFont.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		32B8CCC52F012866000C25FD /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
+		32B8CCC62F012866000C25FD /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -45,6 +52,8 @@
 		3270092C2EFB4C3D0040FC5F = {
 			isa = PBXGroup;
 			children = (
+				32B8CCC52F012866000C25FD /* LICENSE */,
+				32B8CCC62F012866000C25FD /* README.md */,
 				327009372EFB4C3D0040FC5F /* pixelFont */,
 				327009362EFB4C3D0040FC5F /* Products */,
 			);
@@ -122,6 +131,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				32B8CCC72F012866000C25FD /* README.md in Resources */,
+				32B8CCC82F012866000C25FD /* LICENSE in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
