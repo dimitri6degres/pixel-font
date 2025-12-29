@@ -33,7 +33,7 @@ A SwiftUI bitmap font editor for macOS. Create, modify, and export glyphs (Adafr
 
 ## File Format
 
-Documents are serialized as JSON using `ReferenceFileDocument` with UTI `gi.dimitrifontaine.pixelfont.pixf`.
+Documents are serialized as JSON using `ReferenceFileDocument`.
 
 ## Export
 
