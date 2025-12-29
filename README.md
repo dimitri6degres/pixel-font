@@ -11,7 +11,7 @@ A SwiftUI bitmap font editor for macOS. Create, modify, and export glyphs (Adafr
 
 ## Screenshots
 
-<img src="../screenshot_01.png" alt="Screenshot 1" width="700">
+![Screenshot 1](screenshot_01.png)
 
 ## Requirements
 
