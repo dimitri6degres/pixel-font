@@ -12,28 +12,28 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		327009352EFB4C3D0040FC5F /* pixelFont.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = pixelFont.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		327009352EFB4C3D0040FC5F /* PixelFont.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PixelFont.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		32B8CCC52F012866000C25FD /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
 		32B8CCC62F012866000C25FD /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		3270095C2EFBBF3F0040FC5F /* Exceptions for "pixelFont" folder in "pixelFont" target */ = {
+		3270095C2EFBBF3F0040FC5F /* Exceptions for "PixelFont" folder in "PixelFont" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = 327009342EFB4C3D0040FC5F /* pixelFont */;
+			target = 327009342EFB4C3D0040FC5F /* PixelFont */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		327009372EFB4C3D0040FC5F /* pixelFont */ = {
+		327009372EFB4C3D0040FC5F /* PixelFont */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				3270095C2EFBBF3F0040FC5F /* Exceptions for "pixelFont" folder in "pixelFont" target */,
+				3270095C2EFBBF3F0040FC5F /* Exceptions for "PixelFont" folder in "PixelFont" target */,
 			);
-			path = pixelFont;
+			path = PixelFont;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -54,7 +54,7 @@
 			children = (
 				32B8CCC52F012866000C25FD /* LICENSE */,
 				32B8CCC62F012866000C25FD /* README.md */,
-				327009372EFB4C3D0040FC5F /* pixelFont */,
+				327009372EFB4C3D0040FC5F /* PixelFont */,
 				327009362EFB4C3D0040FC5F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -62,7 +62,7 @@
 		327009362EFB4C3D0040FC5F /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				327009352EFB4C3D0040FC5F /* pixelFont.app */,
+				327009352EFB4C3D0040FC5F /* PixelFont.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -70,9 +70,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		327009342EFB4C3D0040FC5F /* pixelFont */ = {
+		327009342EFB4C3D0040FC5F /* PixelFont */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 327009402EFB4C3E0040FC5F /* Build configuration list for PBXNativeTarget "pixelFont" */;
+			buildConfigurationList = 327009402EFB4C3E0040FC5F /* Build configuration list for PBXNativeTarget "PixelFont" */;
 			buildPhases = (
 				327009312EFB4C3D0040FC5F /* Sources */,
 				327009322EFB4C3D0040FC5F /* Frameworks */,
@@ -83,13 +83,13 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				327009372EFB4C3D0040FC5F /* pixelFont */,
+				327009372EFB4C3D0040FC5F /* PixelFont */,
 			);
-			name = pixelFont;
+			name = PixelFont;
 			packageProductDependencies = (
 			);
 			productName = FontEdit;
-			productReference = 327009352EFB4C3D0040FC5F /* pixelFont.app */;
+			productReference = 327009352EFB4C3D0040FC5F /* PixelFont.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -107,7 +107,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 327009302EFB4C3D0040FC5F /* Build configuration list for PBXProject "pixelFont" */;
+			buildConfigurationList = 327009302EFB4C3D0040FC5F /* Build configuration list for PBXProject "PixelFont" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -121,7 +121,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				327009342EFB4C3D0040FC5F /* pixelFont */,
+				327009342EFB4C3D0040FC5F /* PixelFont */,
 			);
 		};
 /* End PBXProject section */
@@ -295,7 +295,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = pixelFont/Info.plist;
+				INFOPLIST_FILE = PixelFont/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -347,7 +347,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = pixelFont/Info.plist;
+				INFOPLIST_FILE = PixelFont/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -376,7 +376,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		327009302EFB4C3D0040FC5F /* Build configuration list for PBXProject "pixelFont" */ = {
+		327009302EFB4C3D0040FC5F /* Build configuration list for PBXProject "PixelFont" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				3270093E2EFB4C3E0040FC5F /* Debug */,
@@ -385,7 +385,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		327009402EFB4C3E0040FC5F /* Build configuration list for PBXNativeTarget "pixelFont" */ = {
+		327009402EFB4C3E0040FC5F /* Build configuration list for PBXNativeTarget "PixelFont" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				327009412EFB4C3E0040FC5F /* Debug */,
