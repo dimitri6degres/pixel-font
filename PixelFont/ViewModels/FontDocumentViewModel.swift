@@ -73,14 +73,7 @@ final class FontDocumentViewModel: ObservableObject {
     }
     
     
-    func exportC() -> String {
-        var copy = document
-        if let base = exportBaseName, !base.isEmpty {
-            copy.name = base
-        }
-        return copy.exportC(options: exportOptions)
-    }
-    
+
     
     func moveGlyphs(from source: IndexSet, to destination: Int) {
         document.glyphs.move(fromOffsets: source, toOffset: destination)
@@ -131,17 +124,15 @@ final class FontDocumentViewModel: ObservableObject {
         guard let index = document.glyphs.firstIndex(where: { $0.id == selectedGlyphID }),
               row >= 0, column >= 0 else { return }
         
-        let baseW = document.glyphWidth
-        let offset = document.glyphs[index].advanceWidthOffset
-        let horzLimit = max(1, min(100, baseW + offset))
-        let vertLimit = max(1, min(100, document.glyphHeight))
+        let maxW = 128
+        let maxH = 128
         
-        guard row < vertLimit, column < horzLimit else { return }
+        guard row < maxH, column < maxW else { return }
         
         // Ensure vertical size (rows)
         if row >= document.glyphs[index].height {
             let currentHeight = document.glyphs[index].height
-            let neededHeight = min(row + 1, vertLimit)
+            let neededHeight = min(row + 1, maxH)
             if neededHeight > currentHeight {
                 let currentRowWidth = document.glyphs[index].width
                 let rowsToAdd = neededHeight - currentHeight
@@ -150,7 +141,7 @@ final class FontDocumentViewModel: ObservableObject {
             }
         }
         
-        let neededW = min(max(column + 1, document.glyphs[index].width), horzLimit)
+        let neededW = min(max(column + 1, document.glyphs[index].width), maxW)
         if document.glyphs[index].width < neededW {
             for r in 0..<document.glyphs[index].height {
                 let currentCount = document.glyphs[index].pixels[r].count
@@ -270,7 +261,7 @@ final class FontDocumentViewModel: ObservableObject {
         let beforeGlyph = document.glyphs[index]
         let g = beforeGlyph
 
-        // Rotation 90° horaire: (r, c) -> (c, H-1-r)
+        // 90° clockwise rotation: (r, c) -> (c, H-1-r)
         let oldH = g.height, oldW = g.width
         var rotated = Array(repeating: Array(repeating: false, count: oldH), count: oldW)
         for r in 0..<oldH {
@@ -279,8 +270,8 @@ final class FontDocumentViewModel: ObservableObject {
             }
         }
 
-        // Préserver tous les pixels: ajuster le canevas du glyphe si nécessaire (sans toucher aux dimensions globales)
-        // Ici, on remplace simplement la matrice de pixels par la version pivotée (W' = oldH, H' = oldW)
+        // Preserve all pixels: adjust glyph canvas if needed (without changing global dimensions)
+        // Here we simply replace the pixel matrix with the rotated version (W' = oldH, H' = oldW)
         let newPixels = rotated
 
         document.glyphs[index] = Glyph(
@@ -303,7 +294,7 @@ final class FontDocumentViewModel: ObservableObject {
         let beforeGlyph = document.glyphs[index]
         let g = beforeGlyph
 
-        // Rotation 90° anti-horaire: (r, c) -> (W-1-c, r)
+        // 90° counter-clockwise rotation: (r, c) -> (W-1-c, r)
         let oldH = g.height, oldW = g.width
         var rotated = Array(repeating: Array(repeating: false, count: oldH), count: oldW)
         for r in 0..<oldH {
@@ -312,7 +303,7 @@ final class FontDocumentViewModel: ObservableObject {
             }
         }
 
-        // Préserver tous les pixels: on adopte la matrice pivotée telle quelle
+        // Preserve all pixels: adopt the rotated matrix as-is
         let newPixels = rotated
 
         document.glyphs[index] = Glyph(
@@ -400,6 +391,95 @@ final class FontDocumentViewModel: ObservableObject {
             target.objectWillChange.send()
         }
         undoManager?.setActionName("Nudge Right")
+    }
+    
+    // MARK: - Expand/Shrink selected glyph canvas (outside visible window)
+    func expandOrShrinkSelectedGlyphUp(shrink: Bool, undoManager: UndoManager?) {
+        guard let index = document.glyphs.firstIndex(where: { $0.id == selectedGlyphID }) else { return }
+        let before = document.glyphs[index]
+        var g = before
+        if shrink {
+            // Remove top row if any, then shift window up by 1 to keep same content under frame
+            if !g.pixels.isEmpty { g.pixels.removeFirst() }
+            if g.viewOffsetY > 0 { g.viewOffsetY -= 1 }
+        } else {
+            // Insert empty row at top and shift window down to keep frame on existing pixels
+            g.pixels.insert(Array(repeating: false, count: g.width), at: 0)
+            g.viewOffsetY += 1
+        }
+        document.glyphs[index] = g
+        objectWillChange.send()
+        undoManager?.registerUndo(withTarget: self) { target in
+            target.document.glyphs[index] = before
+            target.objectWillChange.send()
+        }
+        undoManager?.setActionName(shrink ? "Shrink Up" : "Expand Up")
+    }
+
+    func expandOrShrinkSelectedGlyphDown(shrink: Bool, undoManager: UndoManager?) {
+        guard let index = document.glyphs.firstIndex(where: { $0.id == selectedGlyphID }) else { return }
+        let before = document.glyphs[index]
+        var g = before
+        if shrink {
+            // Remove bottom row if any
+            if !g.pixels.isEmpty { g.pixels.removeLast() }
+        } else {
+            // Append empty row at bottom (no offset change)
+            g.pixels.append(Array(repeating: false, count: g.width))
+        }
+        document.glyphs[index] = g
+        objectWillChange.send()
+        undoManager?.registerUndo(withTarget: self) { target in
+            target.document.glyphs[index] = before
+            target.objectWillChange.send()
+        }
+        undoManager?.setActionName(shrink ? "Shrink Down" : "Expand Down")
+    }
+
+    func expandOrShrinkSelectedGlyphLeft(shrink: Bool, undoManager: UndoManager?) {
+        guard let index = document.glyphs.firstIndex(where: { $0.id == selectedGlyphID }) else { return }
+        let before = document.glyphs[index]
+        var g = before
+        if shrink {
+            // Remove leftmost column if any, then shift window left by 1 to keep same content under frame
+            for r in 0..<g.height { if !g.pixels[r].isEmpty { g.pixels[r].removeFirst() } }
+            if g.viewOffsetX > 0 { g.viewOffsetX -= 1 }
+        } else {
+            // Insert empty column at left and shift window right to keep frame on existing pixels
+            for r in 0..<g.height { g.pixels[r].insert(false, at: 0) }
+            g.viewOffsetX += 1
+        }
+        document.glyphs[index] = g
+        objectWillChange.send()
+        undoManager?.registerUndo(withTarget: self) { target in
+            target.document.glyphs[index] = before
+            target.objectWillChange.send()
+        }
+        undoManager?.setActionName(shrink ? "Shrink Left" : "Expand Left")
+    }
+
+    func expandOrShrinkSelectedGlyphRight(shrink: Bool, undoManager: UndoManager?) {
+        guard let index = document.glyphs.firstIndex(where: { $0.id == selectedGlyphID }) else { return }
+        let before = document.glyphs[index]
+        var g = before
+        if shrink {
+            // Remove rightmost column if any
+            for r in 0..<g.height {
+                if !g.pixels[r].isEmpty { g.pixels[r].removeLast() }
+            }
+        } else {
+            // Append empty column at right (no offset change)
+            for r in 0..<g.height {
+                g.pixels[r].append(false)
+            }
+        }
+        document.glyphs[index] = g
+        objectWillChange.send()
+        undoManager?.registerUndo(withTarget: self) { target in
+            target.document.glyphs[index] = before
+            target.objectWillChange.send()
+        }
+        undoManager?.setActionName(shrink ? "Shrink Right" : "Expand Right")
     }
     
     func resizeGlyphs(width newWidth: Int, height newHeight: Int, undoManager: UndoManager?) {
@@ -569,123 +649,377 @@ final class FontDocumentViewModel: ObservableObject {
         }
     }
     
-    func exportAdafruitGFX(fontName rawName: String) -> String {
-        // Sanitize name for C identifier
-        let cleaned = rawName.replacingOccurrences(of: " ", with: "_")
-        let parts = cleaned.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
-        var cName = parts.joined(separator: "_")
-        if cName.isEmpty { cName = "MyFont" }
-        if let first = cName.first, first.isNumber { cName = "_" + cName }
-        
-        // Build ascii -> glyph map
-        var map: [UInt8: Glyph] = [:]
-        for g in document.glyphs {
-            if let a = g.character?.asciiValue { map[a] = g }
-        }
-        
-        // Determine character range (continuous for Adafruit GFX)
-        let keys = map.keys
-        let firstChar: UInt8 = keys.min() ?? 0x20
-        let lastChar: UInt8  = keys.max() ?? 0x7E
-        
-        let w = document.glyphWidth
-        let h = document.glyphHeight
-        
-        // Prepare bitmap data and glyph table
-        var bitmapBytes: [UInt8] = []
-        struct G { var offset:Int; var w:Int; var h:Int; var xAdv:Int; var xOff:Int; var yOff:Int; var code: UInt8; var present: Bool }
-        var glyphTable: [G] = []
-        
-        for code in firstChar...lastChar {
-            let present = map[code] != nil
-            let g = map[code] ?? Glyph.empty(width: w, height: h, character: nil)
-            let xAdvance = max(1, min(255, w + g.advanceWidthOffset))
-            let xOffset = 0
-            let yOffset = -(h - 1)
-            let startOffset = bitmapBytes.count
-            
-            // Pack bits MSB-first, row-major
-            var bitAccumulator: UInt8 = 0
-            var bitCount = 0
-            for row in 0..<h {
-                for col in 0..<w {
-                    let on = (row < g.pixels.count && col < g.pixels[row].count) ? g.pixels[row][col] : false
-                    bitAccumulator <<= 1
-                    if on { bitAccumulator |= 1 }
-                    bitCount += 1
-                    if bitCount == 8 {
-                        bitmapBytes.append(bitAccumulator)
-                        bitAccumulator = 0
-                        bitCount = 0
-                    }
-                }
-            }
-            if bitCount > 0 {
-                bitAccumulator <<= (8 - bitCount)
-                bitmapBytes.append(bitAccumulator)
-            }
-            
-            glyphTable.append(G(offset: startOffset, w: w, h: h, xAdv: xAdvance, xOff: xOffset, yOff: yOffset, code: code, present: present))
-        }
-        
-        // Format arrays
-        func formatBytes(_ bytes: [UInt8], perLine: Int = 12) -> String {
-            var lines: [String] = []
-            var i = 0
-            while i < bytes.count {
-                let end = min(i + perLine, bytes.count)
-                let slice = bytes[i..<end].map { String(format: "0x%02X", $0) }.joined(separator: ", ")
-                lines.append("    " + slice + (end < bytes.count ? "," : ""))
-                i = end
-            }
-            return lines.joined(separator: "\n")
-        }
-        
-        var glyphLines: [String] = []
-        for (index, g) in glyphTable.enumerated() {
-            let ch: String
-            if g.present {
-                let scalar = UnicodeScalar(g.code)
-                if g.code >= 0x20 && g.code <= 0x7E {
-                    ch = "'\(Character(scalar))'"
-                } else {
-                    ch = "<0x\(String(format: "%02X", g.code))>"
-                }
-            } else {
-                ch = "<unknown>"
-            }
-            let comment = "// \(ch) (0x\(String(format: "%02X", g.code)))"
-            let entry = String(format: "    {%d, %d, %d, %d, %d, %d}%@ \(comment)",
-                               g.offset, g.w, g.h, g.xAdv, g.xOff, g.yOff,
-                               index < glyphTable.count - 1 ? "," : "")
-            glyphLines.append(entry)
-        }
-        
-        let header = """
-#pragma once
-#include <Adafruit_GFX.h>
-
-const uint8_t \(cName)Bitmaps[] PROGMEM = {
-\(formatBytes(bitmapBytes))
-};
-
-const GFXglyph \(cName)Glyphs[] PROGMEM = {
-\(glyphLines.joined(separator: "\n"))
-};
-
-const GFXfont \(cName) PROGMEM = {
-  (uint8_t*)\(cName)Bitmaps,
-  (GFXglyph*)\(cName)Glyphs,
-  0x\(String(format: "%02X", firstChar)),
-  0x\(String(format: "%02X", lastChar)),
-  \(h)
-};
-"""
-        return header
+    func exportAdafruitGFX(fontName rawName: String, options: ExportOptions? = nil) -> String {
+        let effectiveOptions = options ?? exportOptions
+        var copy = document
+        copy.name = rawName
+        return copy.exportAdafruitGFX(fontName: rawName, options: effectiveOptions)
     }
     
+    // MARK: - Import .h (Adafruit GFX header)
+    func openHeaderAndImport(undoManager: UndoManager?) {
+        let panel = NSOpenPanel()
+//        panel.allowedFileTypes = ["h"]
+        panel.allowedContentTypes = [.cHeader]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canCreateDirectories = false
+        panel.title = "Open Header (.h)"
+        panel.message = "Choose an Adafruit GFX header exported by the app"
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                let text = try String(contentsOf: url, encoding: .utf8)
+                try importAdafruitGFXHeader(from: text, undoManager: undoManager)
+            } catch {
+                NSAlert(error: error).runModal()
+            }
+        }
+    }
+
+    /// Import a header exported by exportAdafruitGFX(fontName:)
+    /// This parser is intentionally scoped to the format we generate: a single Bitmaps array, a Glyphs array of entries `{offset, w, h, xAdv, xOff, yOff}`, and a GFXfont block with first/last char and height.
+    func importAdafruitGFXHeader(from header: String, undoManager: UndoManager?) throws {
+        // Helper regex builders
+        func regex(_ pattern: String) throws -> NSRegularExpression { try NSRegularExpression(pattern: pattern, options: []) }
+        let full = header as NSString
+
+        // Extract font height from final GFXfont block (last line before closing): height as an integer
+        let fontHeightRegex = try regex(#"const\s+GFXfont\s+\w+\s+PROGMEM\s*=\s*\{[\s\S]*?,\s*(\d+)\s*\};"#)
+        guard let fh = fontHeightRegex.firstMatch(in: header, range: NSRange(location: 0, length: full.length)), fh.numberOfRanges >= 2 else {
+            throw NSError(domain: "Import", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not find font height in header."])
+        }
+        let heightString = full.substring(with: fh.range(at: 1))
+        guard let fontHeight = Int(heightString) else {
+            throw NSError(domain: "Import", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid font height value."])
+        }
+
+        // Extract first and last chars (hex) from the GFXfont block
+        let firstLastRegex = try regex(#"\{[\s\S]*?,\s*0x([0-9A-Fa-f]{2}),\s*0x([0-9A-Fa-f]{2}),\s*\d+\s*\};"#)
+        guard let fr = firstLastRegex.firstMatch(in: header, range: NSRange(location: 0, length: full.length)), fr.numberOfRanges >= 3 else {
+            throw NSError(domain: "Import", code: 3, userInfo: [NSLocalizedDescriptionKey: "Could not find first/last char range."])
+        }
+        let firstHex = full.substring(with: fr.range(at: 1))
+        let lastHex = full.substring(with: fr.range(at: 2))
+        guard let firstChar = UInt8(firstHex, radix: 16), UInt8(lastHex, radix: 16) != nil else {
+            throw NSError(domain: "Import", code: 4, userInfo: [NSLocalizedDescriptionKey: "Invalid first/last char values."])
+        }
+
+        // Extract bitmap bytes block
+        let bitmapRegex = try regex(#"const\s+uint8_t\s+\w+Bitmaps\[\]\s+PROGMEM\s*=\s*\{([\s\S]*?)\};"#)
+        guard let bm = bitmapRegex.firstMatch(in: header, range: NSRange(location: 0, length: full.length)), bm.numberOfRanges >= 2 else {
+            throw NSError(domain: "Import", code: 5, userInfo: [NSLocalizedDescriptionKey: "Could not find bitmap data."])
+        }
+        let bitmapBody = full.substring(with: bm.range(at: 1))
+        let byteRegex = try regex(#"0x([0-9A-Fa-f]{2})"#)
+        let byteMatches = byteRegex.matches(in: bitmapBody, range: NSRange(location: 0, length: (bitmapBody as NSString).length))
+        var bitmapBytes: [UInt8] = []
+        for m in byteMatches { if m.numberOfRanges >= 2 { let hex = (bitmapBody as NSString).substring(with: m.range(at: 1)); if let b = UInt8(hex, radix: 16) { bitmapBytes.append(b) } } }
+
+        // Extract glyph table entries
+        let glyphsRegex = try regex(#"const\s+GFXglyph\s+\w+Glyphs\[\]\s+PROGMEM\s*=\s*\{([\s\S]*?)\};"#)
+        guard let gm = glyphsRegex.firstMatch(in: header, range: NSRange(location: 0, length: full.length)), gm.numberOfRanges >= 2 else {
+            throw NSError(domain: "Import", code: 6, userInfo: [NSLocalizedDescriptionKey: "Could not find glyph table."])
+        }
+        let glyphsBody = full.substring(with: gm.range(at: 1))
+        // Entries look like: {offset, w, h, xAdv, xOff, yOff}
+        let entryRegex = try regex(#"\{\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\}"#)
+        let entries = entryRegex.matches(in: glyphsBody, range: NSRange(location: 0, length: (glyphsBody as NSString).length))
+
+        // Rebuild glyphs by unpacking bits for each entry using w,h and offset; MSB-first, row-major (as our export)
+        var newGlyphs: [Glyph] = []
+        let baseWidthGuess = entries.first.flatMap { match -> Int? in
+            if match.numberOfRanges >= 3 { let wStr = (glyphsBody as NSString).substring(with: match.range(at: 2)); return Int(wStr) } else { return nil }
+        } ?? 8
+
+        for (i, match) in entries.enumerated() {
+            guard match.numberOfRanges >= 7 else { continue }
+            let offsetStr = (glyphsBody as NSString).substring(with: match.range(at: 1))
+            let wStr = (glyphsBody as NSString).substring(with: match.range(at: 2))
+            let hStr = (glyphsBody as NSString).substring(with: match.range(at: 3))
+            let advStr = (glyphsBody as NSString).substring(with: match.range(at: 4))
+            let offStr = (glyphsBody as NSString).substring(with: match.range(at: 5))
+            // let yOffStr = (glyphsBody as NSString).substring(with: match.range(at: 6)) // currently unused
+            guard let offset = Int(offsetStr), let gw = Int(wStr), let gh = Int(hStr), let xAdv = Int(advStr), Int(offStr) != nil else { continue }
+
+            // Compute character code from range
+            let code = Int(firstChar) + i
+            let ch: Character? = (code >= 0 && code <= 255) ? Character(UnicodeScalar(code)!) : nil
+
+            // Unpack bits for gw*gh
+            var pixels = Array(repeating: Array(repeating: false, count: gw), count: gh)
+            var bitIndex = 0
+            for row in 0..<gh {
+                for col in 0..<gw {
+                    let bitPos = offset * 8 + bitIndex
+                    let byteIndex = bitPos / 8
+                    guard byteIndex < bitmapBytes.count else { continue }
+                    let b = bitmapBytes[byteIndex]
+                    let posInByte = bitPos % 8
+                    let on = ((b >> (7 - posInByte)) & 0x01) == 1
+                    pixels[row][col] = on
+                    bitIndex += 1
+                }
+            }
+
+            // advance width offset relative to base document width
+            let advanceOffset = xAdv - baseWidthGuess
+            let glyph = Glyph(character: ch, pixels: pixels, advanceWidthOffset: advanceOffset)
+            newGlyphs.append(glyph)
+        }
+
+        // Update document with imported data
+        let before = document
+        document.name = "Imported"
+        document.glyphWidth = baseWidthGuess
+        document.glyphHeight = fontHeight
+        document.glyphs = newGlyphs
+        document.baseline = max(0, fontHeight - 2)
+        objectWillChange.send()
+
+        undoManager?.registerUndo(withTarget: self) { target in
+            target.document = before
+            target.objectWillChange.send()
+        }
+        undoManager?.setActionName("Import .h Header")
+    }
+
+    // MARK: - Crop selected glyph to visible window
+    func cropSelectedGlyphToVisibleWindow(undoManager: UndoManager?) {
+        guard let idx = document.glyphs.firstIndex(where: { $0.id == selectedGlyphID }) else { return }
+        let before = document.glyphs[idx]
+        let g = before
+        let baseW = document.glyphWidth
+        let baseH = document.glyphHeight
+        let visibleW = max(0, baseW + g.advanceWidthOffset)
+        let visibleH = max(0, min(g.height, baseH))
+        let startCol = max(0, g.viewOffsetX)
+        let startRow = max(0, g.viewOffsetY)
+        guard visibleW > 0, visibleH > 0, startRow < g.height, startCol < g.width else { return }
+        let endRow = min(g.height, startRow + visibleH)
+        let endCol = min(g.width, startCol + visibleW)
+
+        var newPixels: [[Bool]] = []
+        newPixels.reserveCapacity(endRow - startRow)
+        for r in startRow..<endRow {
+            let rowSlice = Array(g.pixels[r][startCol..<endCol])
+            newPixels.append(rowSlice)
+        }
+
+        var cropped = g
+        cropped.pixels = newPixels
+        cropped.viewOffsetX = 0
+        cropped.viewOffsetY = 0
+        // advanceWidthOffset remains unchanged (visibleW may equal baseW+offset already)
+        document.glyphs[idx] = cropped
+        objectWillChange.send()
+
+        undoManager?.registerUndo(withTarget: self) { target in
+            if let uidx = target.document.glyphs.firstIndex(where: { $0.id == before.id }) {
+                target.document.glyphs[uidx] = before
+                target.objectWillChange.send()
+            }
+        }
+        undoManager?.setActionName("Crop to Frame")
+    }
+    
+//    func cropSelectedGlyphToContent(undoManager: UndoManager?) {
+//        guard let idx = document.glyphs.firstIndex(where: { $0.id == selectedGlyphID }) else { return }
+//        let before = document.glyphs[idx]
+//        let g = before
+//        let h = g.height
+//        let w = g.width
+//        guard h > 0, w > 0 else { return }
+//
+//        var minRow = h, maxRow = -1
+//        var minCol = w, maxCol = -1
+//        for r in 0..<h {
+//            for c in 0..<w {
+//                if g.pixels[r][c] {
+//                    if r < minRow { minRow = r }
+//                    if r > maxRow { maxRow = r }
+//                    if c < minCol { minCol = c }
+//                    if c > maxCol { maxCol = c }
+//                }
+//            }
+//        }
+//
+//        // If no pixels are on, keep a 1x1 empty glyph
+//        if maxRow < 0 || maxCol < 0 {
+//            var cropped = g
+//            cropped.pixels = [[false]]
+//            cropped.viewOffsetX = 0
+//            cropped.viewOffsetY = 0
+//            document.glyphs[idx] = cropped
+//            objectWillChange.send()
+//            undoManager?.registerUndo(withTarget: self) { target in
+//                if let uidx = target.document.glyphs.firstIndex(where: { $0.id == before.id }) {
+//                    target.document.glyphs[uidx] = before
+//                    target.objectWillChange.send()
+//                }
+//            }
+//            undoManager?.setActionName("Crop to Content")
+//            return
+//        }
+//
+//        let newH = maxRow - minRow + 1
+//        let newW = maxCol - minCol + 1
+//        var newPixels: [[Bool]] = Array(repeating: Array(repeating: false, count: newW), count: newH)
+//        for r in 0..<newH {
+//            for c in 0..<newW {
+//                newPixels[r][c] = g.pixels[minRow + r][minCol + c]
+//            }
+//        }
+//
+//        var cropped = g
+//        cropped.pixels = newPixels
+//
+//        // Preserve frame placement: shift offsets by the amount cropped from top/left
+//        let oldOffX = g.viewOffsetX
+//        let oldOffY = g.viewOffsetY
+//        var newOffX = max(0, oldOffX - minCol)
+//        var newOffY = max(0, oldOffY - minRow)
+//
+//        // Clamp offsets so the visible window stays within bounds
+//        let visibleW = max(1, min(128, document.glyphWidth + g.advanceWidthOffset))
+//        let visibleH = max(1, min(128, document.glyphHeight))
+//        let maxStartX = max(0, newPixels.first?.count ?? 0 - visibleW)
+//        let maxStartY = max(0, newPixels.count - visibleH)
+//        if newOffX > maxStartX { newOffX = maxStartX }
+//        if newOffY > maxStartY { newOffY = maxStartY }
+//
+//        cropped.viewOffsetX = newOffX
+//        cropped.viewOffsetY = newOffY
+//
+//        document.glyphs[idx] = cropped
+//        objectWillChange.send()
+//
+//        undoManager?.registerUndo(withTarget: self) { target in
+//            if let uidx = target.document.glyphs.firstIndex(where: { $0.id == before.id }) {
+//                target.document.glyphs[uidx] = before
+//                target.objectWillChange.send()
+//            }
+//        }
+//        undoManager?.setActionName("Crop to Content")
+//    }
+    
+    
+    func cropSelectedGlyphToContent(undoManager: UndoManager?) {
+        guard let idx = document.glyphs.firstIndex(where: { $0.id == selectedGlyphID }) else { return }
+        let before = document.glyphs[idx]
+        let g = before
+
+        let h = g.height
+        let w = g.width
+        guard h > 0, w > 0 else { return }
+
+        // 1) Find content bounding box
+        var minRow = h, maxRow = -1
+        var minCol = w, maxCol = -1
+
+        for r in 0..<h {
+            for c in 0..<w {
+                if g.pixels[r][c] {
+                    if r < minRow { minRow = r }
+                    if r > maxRow { maxRow = r }
+                    if c < minCol { minCol = c }
+                    if c > maxCol { maxCol = c }
+                }
+            }
+        }
+
+        // 2) Compute minimum reference frame (same logic as Crop to Frame)
+        let baseW = document.glyphWidth
+        let baseH = document.glyphHeight
+
+        let frameW = max(1, baseW + g.advanceWidthOffset)
+        let frameH = max(1, min(baseH, g.height))
+
+        let frameMinCol = max(0, g.viewOffsetX)
+        let frameMinRow = max(0, g.viewOffsetY)
+        let frameMaxCol = min(g.width - 1, frameMinCol + frameW - 1)
+        let frameMaxRow = min(g.height - 1, frameMinRow + frameH - 1)
+
+        // Helper to apply + commit undo (keeps the function readable)
+        func commit(_ cropped: Glyph, actionName: String) {
+            document.glyphs[idx] = cropped
+            objectWillChange.send()
+
+            undoManager?.registerUndo(withTarget: self) { target in
+                if let uidx = target.document.glyphs.firstIndex(where: { $0.id == before.id }) {
+                    target.document.glyphs[uidx] = before
+                    target.objectWillChange.send()
+                }
+            }
+            undoManager?.setActionName(actionName)
+        }
+
+        // 3) If no pixels are on, keep an empty glyph AT LEAST the frame size
+        if maxRow < 0 || maxCol < 0 {
+            var cropped = g
+            cropped.pixels = Array(repeating: Array(repeating: false, count: frameW), count: frameH)
+            cropped.viewOffsetX = 0
+            cropped.viewOffsetY = 0
+            commit(cropped, actionName: "Crop to Content")
+            return
+        }
+
+        // 4) Union(content bbox, frame bbox) so crop can't go smaller than the frame
+        if frameMinCol <= frameMaxCol && frameMinRow <= frameMaxRow {
+            minCol = min(minCol, frameMinCol)
+            minRow = min(minRow, frameMinRow)
+            maxCol = max(maxCol, frameMaxCol)
+            maxRow = max(maxRow, frameMaxRow)
+        }
+
+        // Clamp bbox to valid bounds (extra safety)
+        minCol = max(0, minCol)
+        minRow = max(0, minRow)
+        maxCol = min(w - 1, maxCol)
+        maxRow = min(h - 1, maxRow)
+
+        // 5) Build cropped bitmap
+        let newH = maxRow - minRow + 1
+        let newW = maxCol - minCol + 1
+        guard newH > 0, newW > 0 else { return }
+
+        var newPixels: [[Bool]] = Array(
+            repeating: Array(repeating: false, count: newW),
+            count: newH
+        )
+
+        for r in 0..<newH {
+            for c in 0..<newW {
+                newPixels[r][c] = g.pixels[minRow + r][minCol + c]
+            }
+        }
+
+        // 6) Preserve frame placement: shift offsets by cropped amount
+        let oldOffX = g.viewOffsetX
+        let oldOffY = g.viewOffsetY
+        var newOffX = max(0, oldOffX - minCol)
+        var newOffY = max(0, oldOffY - minRow)
+
+        // 7) Clamp offsets so the visible window stays within bounds
+        let visibleW = max(1, document.glyphWidth + g.advanceWidthOffset)
+        let visibleH = max(1, document.glyphHeight)
+
+        let maxStartX = max(0, (newPixels.first?.count ?? 0) - visibleW)
+        let maxStartY = max(0, newPixels.count - visibleH)
+
+        if newOffX > maxStartX { newOffX = maxStartX }
+        if newOffY > maxStartY { newOffY = maxStartY }
+
+        var cropped = g
+        cropped.pixels = newPixels
+        cropped.viewOffsetX = newOffX
+        cropped.viewOffsetY = newOffY
+
+        commit(cropped, actionName: "Crop to Content")
+    }
 }
- 
+
+
+
 // MARK: - Image Import -> Glyph pixels
 
 // MARK: - NSImage helpers

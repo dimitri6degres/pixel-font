@@ -1,10 +1,5 @@
 #!/bin/sh
 
-#  Version.sh
-#  Teamup
-#
-#  Created by dim on 01/07/2024.
-#  Copyright © 2024 6°designers. All rights reserved.
 
 #!/bin/bash
 # This script is designed to increment the build number consistently across all

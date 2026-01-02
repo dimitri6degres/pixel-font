@@ -1,0 +1,12 @@
+//
+//  Config.xcconfig
+//  6-transcript
+//
+//  Created by dim on 01/07/2024.
+//
+
+// Configuration settings file format documentation can be found at:
+// https://help.apple.com/xcode/#/dev745c5c974
+
+VERSION = 1.0.1
+BUILD_NUMBER = 2026010236

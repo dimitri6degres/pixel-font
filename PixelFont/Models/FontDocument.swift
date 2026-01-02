@@ -14,7 +14,7 @@ struct FontDocument: Identifiable, Equatable {
         self.glyphWidth = glyphWidth
         self.glyphHeight = glyphHeight
         self.glyphs = glyphs
-        self.baseline = max(0, glyphHeight - 2)
+        self.baseline = max(0, glyphHeight)
     }
     
     init(id: UUID = UUID(), name: String, glyphWidth: Int, glyphHeight: Int, glyphs: [Glyph], baseline: Int) {
@@ -23,7 +23,7 @@ struct FontDocument: Identifiable, Equatable {
         self.glyphWidth = glyphWidth
         self.glyphHeight = glyphHeight
         self.glyphs = glyphs
-        self.baseline = max(0, min(glyphHeight - 1, baseline))
+        self.baseline = max(0, min(glyphHeight, baseline))
     }
 
     static func sample() -> FontDocument {
@@ -47,9 +47,9 @@ extension FontDocument: Codable {
         self.glyphs = try container.decode([Glyph].self, forKey: .glyphs)
         // Baseline: default for legacy files missing this key
         if let decodedBaseline = try container.decodeIfPresent(Int.self, forKey: .baseline) {
-            self.baseline = max(0, min(glyphHeight - 1, decodedBaseline))
+            self.baseline = max(0, min(glyphHeight, decodedBaseline))
         } else {
-            self.baseline = max(0, glyphHeight - 2)
+            self.baseline = max(0, glyphHeight)
         }
     }
 
@@ -70,6 +70,7 @@ struct ExportOptions: Codable {
     var includeLineSpacing: Bool = true
     var tabSize: Int = 4
     var usePROGMEM: Bool = true
+    var cropGlyphs: Bool = true
 }
 
 extension Glyph {
@@ -98,7 +99,9 @@ extension Glyph {
 }
 
 extension FontDocument {
-    func exportC(options: ExportOptions) -> String {
+    func exportAdafruitGFX(fontName rawName: String, options: ExportOptions = ExportOptions()) -> String {
+        let document = self
+
         // Helper to normalize C identifier
         func cIdentifier(from name: String) -> String {
             let allowed = name.unicodeScalars.map { ch -> Character in
@@ -113,8 +116,9 @@ extension FontDocument {
             return s
         }
 
+        let nameC = cIdentifier(from: rawName)
+
         let tab = String(repeating: " ", count: options.tabSize)
-        let nameC = cIdentifier(from: name)
         let dateString: String = {
             let f = DateFormatter()
             f.dateFormat = "dd-MM-yyyy HH:mm:ss"
@@ -122,168 +126,196 @@ extension FontDocument {
         }()
 
         // Collect only drawn glyphs (with a character)
-        let presentGlyphs = glyphs.compactMap { g -> (UInt32, Glyph)? in
+        let presentGlyphs = document.glyphs.compactMap { g -> (UInt32, Glyph)? in
             guard let scalar = g.character?.unicodeScalars.first else { return nil }
             return (scalar.value, g)
         }.sorted { $0.0 < $1.0 }
 
-        // Precompute bytes per glyph using current options
-        func bytes(for glyph: Glyph) -> [UInt8] {
-            glyph.toBytes(msbFirst: options.msbFirst, invert: options.invertBits)
+        // Determine first and last char code
+        let firstChar = presentGlyphs.map { $0.0 }.min() ?? 0x20
+        let lastChar = presentGlyphs.map { $0.0 }.max() ?? 0x7E
+
+        // Create dictionary for quick lookup
+        let glyphMap: [UInt32: Glyph] = Dictionary(uniqueKeysWithValues: presentGlyphs)
+
+        struct G {
+            let code: UInt32
+            let bitmapOffset: Int
+            let width: Int
+            let height: Int
+            let xAdvance: Int
+            let xOffset: Int
+            let yOffset: Int
         }
 
-        // Build arrays
-        var dataBytes: [UInt8] = []
-        var offsets: [UInt16] = []
-        var chars: [UInt8] = []
-        var advances: [UInt8] = []
+        var glyphs: [G] = []
+        var bitmapData: [UInt8] = []
 
-        for (code, g) in presentGlyphs {
-            let offset = UInt16(dataBytes.count & 0xFFFF)
-            offsets.append(offset)
-            chars.append(UInt8(code & 0xFF))
-            let adv = max(0, min(255, glyphWidth + g.advanceWidthOffset))
-            advances.append(UInt8(adv))
-            let b = bytes(for: g)
-            dataBytes.append(contentsOf: b)
+        for code in firstChar...lastChar {
+            if let g = glyphMap[code] {
+                let w = document.glyphWidth
+                let h = document.glyphHeight
+
+                let xAdvance = max(1, min(255, w + g.advanceWidthOffset))
+                let startCol = max(0, g.viewOffsetX)
+                let startRow = max(0, g.viewOffsetY)
+                let frameW = max(1, min(255, w + g.advanceWidthOffset))
+                let frameH = max(1, min(255, min(g.height, h)))
+
+                // Full glyph pixel matrix boundaries
+                let fullMinCol = 0
+                let fullMaxCol = g.width
+                let fullMinRow = 0
+                let fullMaxRow = g.height
+
+                // Base frame boundaries (window frame)
+                let frameMinCol = startCol
+                let frameMaxCol = startCol + frameW
+                let frameMinRow = startRow
+                let frameMaxRow = startRow + frameH
+
+                // Crop rectangle to be computed
+                var cropMinCol = frameMinCol
+                var cropMaxCol = frameMaxCol
+                var cropMinRow = frameMinRow
+                var cropMaxRow = frameMaxRow
+
+                if options.cropGlyphs {
+                    // Find tightest bounding box containing any "on" pixel inside the full glyph pixel matrix
+                    var found = false
+                    var minCol = fullMaxCol
+                    var maxCol = fullMinCol
+                    var minRow = fullMaxRow
+                    var maxRow = fullMinRow
+
+                    for row in fullMinRow..<fullMaxRow {
+                        for col in fullMinCol..<fullMaxCol {
+                            if row < g.height && col < g.width && g.pixels[row][col] {
+                                if !found {
+                                    minCol = col
+                                    maxCol = col
+                                    minRow = row
+                                    maxRow = row
+                                    found = true
+                                } else {
+                                    if col < minCol { minCol = col }
+                                    if col > maxCol { maxCol = col }
+                                    if row < minRow { minRow = row }
+                                    if row > maxRow { maxRow = row }
+                                }
+                            }
+                        }
+                    }
+                    if found {
+                        cropMinCol = minCol
+                        cropMaxCol = maxCol + 1
+                        cropMinRow = minRow
+                        cropMaxRow = maxRow + 1
+                    } else {
+                        // No "on" pixel found - fallback to 1x1 empty bbox at original frame origin
+                        cropMinCol = startCol
+                        cropMaxCol = startCol + 1
+                        cropMinRow = startRow
+                        cropMaxRow = startRow + 1
+                    }
+                } else {
+                    // Crop OFF: strictly crop to the window frame (base frame + advance)
+                    cropMinCol = frameMinCol
+                    cropMaxCol = frameMaxCol
+                    cropMinRow = frameMinRow
+                    cropMaxRow = frameMaxRow
+                }
+
+                let cropWidth = cropMaxCol - cropMinCol
+                let cropHeight = cropMaxRow - cropMinRow
+
+                // Pack bitmap bits MSB-first row-major for the final bbox only
+                var bits: [Bool] = []
+                for row in cropMinRow..<cropMaxRow {
+                    for col in cropMinCol..<cropMaxCol {
+                        let on = (row < g.height && col < g.width) ? g.pixels[row][col] : false
+                        bits.append(on != options.invertBits)
+                    }
+                }
+
+                var bytes: [UInt8] = []
+                var bitIndex = 0
+                while bitIndex < bits.count {
+                    var value: UInt8 = 0
+                    for bitPos in 0..<8 {
+                        if bitIndex >= bits.count { break }
+                        if bits[bitIndex] {
+                            value |= 1 << (7 - bitPos)
+                        }
+                        bitIndex += 1
+                    }
+                    bytes.append(value)
+                }
+
+                let bitmapOffset = bitmapData.count
+                bitmapData.append(contentsOf: bytes)
+
+                // Compute Adafruit GFX metrics consistent with preview:
+                let xOff = cropMinCol - startCol
+                let yOff = (-document.baseline) + (cropMinRow - startRow)
+
+                glyphs.append(G(code: code, bitmapOffset: bitmapOffset, width: cropWidth, height: cropHeight, xAdvance: xAdvance, xOffset: xOff, yOffset: yOff))
+            } else {
+                // Missing glyph: empty glyph entry, no bitmap bytes appended
+                let bitmapOffset = bitmapData.count
+                let xAdvance = max(1, min(255, document.glyphWidth))
+                glyphs.append(G(code: code, bitmapOffset: bitmapOffset, width: 0, height: 0, xAdvance: xAdvance, xOffset: 0, yOffset: 0))
+            }
         }
 
-        // Header
         var out: [String] = []
+
         out.append("// \(nameC)")
-        out.append("// Font Size: \(glyphWidth)x\(glyphHeight)px")
+        out.append("// Font Size: \(document.glyphWidth)x\(document.glyphHeight)px")
         out.append("// Created: \(dateString)")
-        out.append("//")
         out.append("")
         out.append("#include <Arduino.h>")
+        out.append("#include <Adafruit_GFX.h>")
         out.append("")
-
-        // Metadata constants
-        out.append("const uint8_t \(nameC)_width = \(glyphWidth);")
-        out.append("const uint8_t \(nameC)_height = \(glyphHeight);")
-        out.append("const uint8_t \(nameC)_count = \(chars.count);")
-        out.append("const uint8_t \(nameC)_baseline = \(max(0, min(255, baseline)));")
-        out.append("")
-
-        // Data array
         let progmem = options.usePROGMEM ? " PROGMEM" : ""
-        out.append("const uint8_t \(nameC)[]\(progmem) = {")
 
-        // Emit bytes in lines of 16
+        // Bitmap array
+        out.append("const uint8_t \(nameC)_bitmap[]\(progmem) = {")
         let bytesPerLine = 16
         var line: [String] = []
-        for (i, byte) in dataBytes.enumerated() {
-            line.append(String(format: "0x%02X", byte))
-            if line.count == bytesPerLine || i == dataBytes.count - 1 {
-                out.append("\(tab)" + line.joined(separator: "," ) + ",")
+        for (i, b) in bitmapData.enumerated() {
+            line.append(String(format: "0x%02X", b))
+            if line.count == bytesPerLine || i == bitmapData.count - 1 {
+                out.append(tab + line.joined(separator: ",") + ",")
                 line.removeAll()
             }
         }
         out.append("};")
         out.append("")
 
-        // Offsets
-        out.append("const uint16_t \(nameC)_offsets[]\(progmem) = {")
-        for (i, off) in offsets.enumerated() {
-            let code = presentGlyphs[i].0
-            let ch: String = {
-                if let s = UnicodeScalar(code) { return String(Character(s)) } else { return "?" }
-            }()
-            out.append("\(tab)\(off), // Character 0x\(String(format: "%02X", code)) (\(code): '\(ch)')")
-        }
-        out.append("};")
-        out.append("")
-
-        // Chars
-        out.append("const uint8_t \(nameC)_chars[]\(progmem) = {")
-        var charLine: [String] = []
-        for (i, c) in chars.enumerated() {
-            charLine.append(String(format: "0x%02X", c))
-            if charLine.count == bytesPerLine || i == chars.count - 1 {
-                out.append("\(tab)" + charLine.joined(separator: "," ) + ",")
-                charLine.removeAll()
+        // Glyph array
+        out.append("const GFXglyph \(nameC)_glyphs[]\(progmem) = {")
+        for g in glyphs {
+            // Emit glyph struct with readable character comment:
+            // bitmapOffset, width, height, xAdvance, xOffset, yOffset
+            let charComment: String
+            if let scalar = UnicodeScalar(g.code), scalar.isASCII && scalar.value >= 0x20 && scalar.value <= 0x7E {
+                charComment = "'\(Character(scalar))' (0x\(String(format: "%02X", g.code)))"
+            } else {
+                charComment = "<0x\(String(format: "%02X", g.code))>"
             }
+            out.append(String(format: "\(tab){ %d, %d, %d, %d, %d, %d }, // %@", g.bitmapOffset, g.width, g.height, g.xAdvance, g.xOffset, g.yOffset, charComment))
         }
         out.append("};")
-
         out.append("")
-        out.append("const uint8_t \(nameC)_advances[]\(progmem) = {")
-        var advLine: [String] = []
-        for (i, a) in advances.enumerated() {
-            advLine.append(String(format: "0x%02X", a))
-            if advLine.count == bytesPerLine || i == advances.count - 1 {
-                out.append("\(tab)" + advLine.joined(separator: "," ) + ",")
-                advLine.removeAll()
-            }
-        }
+
+        // Font structure
+        out.append("const GFXfont \(nameC) PROGMEM = {")
+        out.append(tab + "(uint8_t*)\(nameC)_bitmap,")
+        out.append(tab + "(GFXglyph*)\(nameC)_glyphs,")
+        out.append(tab + "0x\(String(format: "%02X", firstChar)), 0x\(String(format: "%02X", lastChar)), \(document.glyphHeight)")
         out.append("};")
-
         out.append("")
-        out.append("// Helper usage (example):")
-        out.append("//")
-        out.append("// - Find glyph index by ASCII code")
-        out.append("// - Read offset from \(nameC)_offsets")
-        out.append("// - Read \(nameC)_width and \(nameC)_height")
-        out.append("// - Iterate bits from \(nameC) + offset")
-        out.append("//")
-        out.append("/*")
-        out.append("static int16_t \(nameC)_findIndex(uint8_t ascii) {")
-        out.append("    for (uint8_t i = 0; i < \(nameC)_count; i++) {")
-        out.append("        if (pgm_read_byte(&\(nameC)_chars[i]) == ascii) {")
-        out.append("            return (int16_t)i;")
-        out.append("        }")
-        out.append("    }")
-        out.append("    return -1;")
-        out.append("}")
-        out.append("")
-        out.append("static uint8_t \(nameC)_advance(uint8_t ascii) {")
-        out.append("    int16_t idx = \(nameC)_findIndex(ascii);")
-        out.append("    if (idx < 0) return \(nameC)_width;")
-        out.append("    return pgm_read_byte(&\(nameC)_advances[idx]);")
-        out.append("}")
-        out.append("")
-        out.append("static uint16_t \(nameC)_bytesPerGlyph() {")
-        out.append("    uint16_t bits = (uint16_t)\(nameC)_width * (uint16_t)\(nameC)_height;")
-        out.append("    return (bits + 7) / 8;")
-        out.append("}")
-        out.append("")
-        out.append("static bool \(nameC)_bitAt(const uint8_t* data, uint16_t bitIndex) {")
-        out.append("    uint16_t byteIndex = bitIndex >> 3;")
-        out.append("    uint8_t bitPos = bitIndex & 7;")
-        out.append("    uint8_t b = pgm_read_byte(&data[byteIndex]);")
-        out.append("    return (b >> (7 - bitPos)) & 0x01;")
-        out.append("}")
-        out.append("")
-        out.append("static void \(nameC)_drawGlyph(uint8_t ascii, int16_t x, int16_t y, void (*putPixel)(int16_t, int16_t, bool)) {")
-        out.append("    int16_t idx = \(nameC)_findIndex(ascii);")
-        out.append("    if (idx < 0) return;")
-        out.append("")
-        out.append("    uint16_t offset = pgm_read_word(&\(nameC)_offsets[idx]);")
-        out.append("    const uint8_t* data = \(nameC) + offset;")
-        out.append("")
-        out.append("    uint8_t W = \(nameC)_width;")
-        out.append("    uint8_t H = \(nameC)_height;")
-        out.append("    uint16_t totalBits = (uint16_t)W * (uint16_t)H;")
-        out.append("")
-        out.append("    for (uint16_t bit = 0; bit < totalBits; ++bit) {")
-        out.append("        uint8_t row = bit / W;")
-        out.append("        uint8_t col = bit % W;")
-        out.append("        bool on = \(nameC)_bitAt(data, bit);")
-        out.append("        putPixel(x + col, y + row, on);")
-        out.append("    }")
-        out.append("}")
-
-        out.append("static void \(nameC)_drawText(const char* text, int16_t x, int16_t y, void (*putPixel)(int16_t, int16_t, bool)) {")
-        out.append("    if (!text) return;")
-        out.append("    int16_t cx = x;")
-        out.append("    for (const char* p = text; *p; ++p) {")
-        out.append("        uint8_t ascii = (uint8_t)*p;")
-        out.append("        \(nameC)_drawGlyph(ascii, cx, y, putPixel);")
-        out.append("        uint8_t adv = \(nameC)_advance(ascii);")
-        out.append("        cx += adv;")
-        out.append("    }")
-        out.append("}")
-        out.append("*/")
 
         return out.joined(separator: "\n")
     }

@@ -5,12 +5,16 @@ struct Glyph: Identifiable, Hashable, Equatable {
     var character: Character?
     var pixels: [[Bool]]
     var advanceWidthOffset: Int = 0
+    var viewOffsetX: Int = 0
+    var viewOffsetY: Int = 0
 
-    init(id: UUID = UUID(), character: Character? = nil, pixels: [[Bool]], advanceWidthOffset: Int = 0) {
+    init(id: UUID = UUID(), character: Character? = nil, pixels: [[Bool]], advanceWidthOffset: Int = 0, viewOffsetX: Int = 0, viewOffsetY: Int = 0) {
         self.id = id
         self.character = character
         self.pixels = pixels
         self.advanceWidthOffset = advanceWidthOffset
+        self.viewOffsetX = viewOffsetX
+        self.viewOffsetY = viewOffsetY
     }
 
     init(id: UUID = UUID(), character: Character? = nil, width: Int, height: Int, advanceWidthOffset: Int = 0) {
@@ -21,6 +25,8 @@ struct Glyph: Identifiable, Hashable, Equatable {
             count: height
         )
         self.advanceWidthOffset = advanceWidthOffset
+        self.viewOffsetX = 0
+        self.viewOffsetY = 0
     }
 
     static func empty(width: Int, height: Int, character: Character? = nil) -> Glyph {
@@ -38,7 +44,7 @@ struct Glyph: Identifiable, Hashable, Equatable {
 
 extension Glyph: Codable {
     private enum CodingKeys: String, CodingKey {
-        case id, character, pixels, advanceWidthOffset
+        case id, character, pixels, advanceWidthOffset, viewOffsetX, viewOffsetY
     }
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -50,6 +56,8 @@ extension Glyph: Codable {
         }
         self.pixels = try container.decode([[Bool]].self, forKey: .pixels)
         self.advanceWidthOffset = try container.decodeIfPresent(Int.self, forKey: .advanceWidthOffset) ?? 0
+        self.viewOffsetX = try container.decodeIfPresent(Int.self, forKey: .viewOffsetX) ?? 0
+        self.viewOffsetY = try container.decodeIfPresent(Int.self, forKey: .viewOffsetY) ?? 0
     }
 
     func encode(to encoder: Encoder) throws {
@@ -59,6 +67,8 @@ extension Glyph: Codable {
         try container.encodeIfPresent(stringValue, forKey: .character)
         try container.encode(pixels, forKey: .pixels)
         try container.encode(advanceWidthOffset, forKey: .advanceWidthOffset)
+        try container.encode(viewOffsetX, forKey: .viewOffsetX)
+        try container.encode(viewOffsetY, forKey: .viewOffsetY)
     }
 }
 
@@ -79,7 +89,7 @@ extension Glyph {
             }
         }
 
-        return Glyph(id: id, character: character, pixels: newPixels)
+        return Glyph(id: id, character: character, pixels: newPixels, advanceWidthOffset: advanceWidthOffset, viewOffsetX: viewOffsetX, viewOffsetY: viewOffsetY)
     }
 }
 
