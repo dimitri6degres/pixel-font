@@ -191,11 +191,12 @@ struct ContentView: View {
                 .listStyle(.sidebar)
 
                 HStack {
-                    TextField("Add glyph (character)", text: $newGlyphCharacter)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(minWidth: 120)
-                        .onSubmit(addGlyphIfNeeded)
-                    Button("Add", action: addGlyphIfNeeded)
+//                    TextField("Add glyph (character)", text: $newGlyphCharacter)
+//                        .textFieldStyle(.roundedBorder)
+//                        .frame(minWidth: 120)
+//                        .onSubmit(addGlyphIfNeeded)
+
+                    Button("Add a glyph", action: addGlyphIfNeeded)
                         .buttonStyle(.borderedProminent)
                         .disabled(newGlyphCharacter.count != 1)
                 }
