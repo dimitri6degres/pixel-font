@@ -26,9 +26,22 @@ struct FontDocument: Identifiable, Equatable {
         self.baseline = max(0, min(glyphHeight, baseline))
     }
 
+    // Adafruit GFX export ordering: printable ASCII 0x20 (space) to 0x7E (~)
+    static let adafruitPrintableScalars: [UnicodeScalar] = (0x20...0x7E).compactMap { UnicodeScalar($0) }
+    static let adafruitPrintableChars: [Character] = adafruitPrintableScalars.map(Character.init)
+
+    static var adafruitFirstChar: Character { adafruitPrintableChars.first ?? " " }
+
+    static func adafruitNextChar(after ch: Character) -> Character? {
+        guard let idx = adafruitPrintableChars.firstIndex(of: ch) else { return nil }
+        let nextIndex = adafruitPrintableChars.index(after: idx)
+        return nextIndex < adafruitPrintableChars.endIndex ? adafruitPrintableChars[nextIndex] : nil
+    }
+
     static func sample() -> FontDocument {
         var glyphs: [Glyph] = []
-        glyphs.append(Glyph(character: "0", width: 14, height: 22))
+        let first = adafruitFirstChar
+        glyphs.append(Glyph(character: first, width: 14, height: 22))
         return FontDocument(name: "Sample", glyphWidth: 14, glyphHeight: 22, glyphs: glyphs, baseline: 20)
     }
 }

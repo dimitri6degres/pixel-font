@@ -546,6 +546,72 @@ final class FontDocumentViewModel: ObservableObject {
     func importFromPasteboard(undoManager: UndoManager?) {
         let pb = NSPasteboard.general
         
+        // 1) Try to read a JSON glyph (string)
+        let possibleString: String? = pb.string(forType: .string)
+
+        if let str = possibleString?.trimmingCharacters(in: .whitespacesAndNewlines) {
+            struct ClipboardGlyph: Decodable {
+                let type: String?
+                let character: String?
+                let width: Int?
+                let height: Int?
+                let viewOffsetX: Int?
+                let viewOffsetY: Int?
+                let advanceWidthOffset: Int?
+                let pixels: [[Int]]?
+                let pixelsBool: [[Bool]]?
+                enum CodingKeys: String, CodingKey { case type, character, width, height, viewOffsetX, viewOffsetY, advanceWidthOffset, pixels }
+                init(from decoder: Decoder) throws {
+                    let c = try decoder.container(keyedBy: CodingKeys.self)
+                    type = try? c.decode(String.self, forKey: .type)
+                    character = try? c.decode(String.self, forKey: .character)
+                    width = try? c.decode(Int.self, forKey: .width)
+                    height = try? c.decode(Int.self, forKey: .height)
+                    viewOffsetX = try? c.decode(Int.self, forKey: .viewOffsetX)
+                    viewOffsetY = try? c.decode(Int.self, forKey: .viewOffsetY)
+                    advanceWidthOffset = try? c.decode(Int.self, forKey: .advanceWidthOffset)
+                    pixels = try? c.decode([[Int]].self, forKey: .pixels)
+                    pixelsBool = (pixels == nil) ? (try? c.decode([[Bool]].self, forKey: .pixels)) : nil
+                }
+                func resolvedPixels() -> [[Bool]]? {
+                    if let ints = pixels { return ints.map { $0.map { $0 != 0 } } }
+                    if let bools = pixelsBool { return bools }
+                    return nil
+                }
+            }
+
+            func applyClipboardGlyph(_ cg: ClipboardGlyph) -> Bool {
+                guard let newPixels = cg.resolvedPixels(),
+                      let index = document.glyphs.firstIndex(where: { $0.id == selectedGlyphID }) else { return false }
+                let before = document.glyphs[index]
+                document.glyphs[index].pixels = newPixels
+//                if let chStr = cg.character, let firstChar = chStr.first { document.glyphs[index].character = firstChar }
+                if let adv = cg.advanceWidthOffset { document.glyphs[index].advanceWidthOffset = adv }
+                if let ox = cg.viewOffsetX { document.glyphs[index].viewOffsetX = ox }
+                if let oy = cg.viewOffsetY { document.glyphs[index].viewOffsetY = oy }
+                objectWillChange.send()
+                undoManager?.registerUndo(withTarget: self) { target in
+                    if let idx = target.document.glyphs.firstIndex(where: { $0.id == before.id }) {
+                        target.document.glyphs[idx] = before
+                        target.objectWillChange.send()
+                    }
+                }
+                undoManager?.setActionName("Paste Glyph")
+                return true
+            }
+
+            if let data = str.data(using: .utf8) {
+                if let cg = try? JSONDecoder().decode(ClipboardGlyph.self, from: data) {
+                    if applyClipboardGlyph(cg) { return }
+                }
+                // If unconditional decode didn't apply, try a marker check as a secondary hint
+                let looksLikeGlyph = str.contains("\"pixelfont.glyph\"") || str.contains("pixelfont.glyph")
+                if looksLikeGlyph, let cg2 = try? JSONDecoder().decode(ClipboardGlyph.self, from: data) {
+                    if applyClipboardGlyph(cg2) { return }
+                }
+            }
+        }
+        
         // Try common bitmap types first
         if let data = pb.data(forType: .tiff), let img = NSImage(data: data) {
             importImageToSelectedGlyph(platformImage: img, undoManager: undoManager)
@@ -1016,6 +1082,9 @@ final class FontDocumentViewModel: ObservableObject {
 
         commit(cropped, actionName: "Crop to Content")
     }
+    
+    
+    
 }
 
 
