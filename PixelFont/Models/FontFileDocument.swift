@@ -4,16 +4,18 @@ import Combine
 
 extension UTType {
     static var pixelFontDocument: UTType {
-        UTType(exportedAs: "gi.dimitrifontaine.pixelfont.pixf")
+        UTType(exportedAs: "gi.dimitrifontaine.pixelfont-doc.pixf")
     }
 }
+
 
 
 final class FontFileDocument: ReferenceFileDocument, ObservableObject {
     typealias Snapshot = FontDocument
 
-    static var readableContentTypes: [UTType] { [.pixelFontDocument] }
-
+    
+    static var readableContentTypes: [UTType] { [.pixelFontDocument, .json] }
+    
     @Published var model: FontDocument
 
     init(model: FontDocument) {
@@ -24,13 +26,27 @@ final class FontFileDocument: ReferenceFileDocument, ObservableObject {
         self.init(model: .sample())
     }
 
+//    convenience init(configuration: ReadConfiguration) throws {
+//        guard let data = configuration.file.regularFileContents else {
+//            throw CocoaError(.fileReadCorruptFile)
+//        }
+//        let decoder = JSONDecoder()
+//        let decoded = try decoder.decode(FontDocument.self, from: data)
+//        self.init(model: decoded)
+//    }
+    
     convenience init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents else {
             throw CocoaError(.fileReadCorruptFile)
         }
         let decoder = JSONDecoder()
-        let decoded = try decoder.decode(FontDocument.self, from: data)
-        self.init(model: decoded)
+        do {
+            let decoded = try decoder.decode(FontDocument.self, from: data)
+            self.init(model: decoded)
+        } catch {
+            print("Decode error:", error)
+            throw error
+        }
     }
 
     func snapshot(contentType: UTType) throws -> Snapshot {

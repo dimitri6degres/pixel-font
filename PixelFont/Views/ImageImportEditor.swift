@@ -1,5 +1,16 @@
 import SwiftUI
 import AppKit
+import CoreImage
+import CoreImage.CIFilterBuiltins
+
+private func pixelSize(of image: NSImage) -> CGSize {
+    if let rep = image.representations.first {
+        let w = CGFloat(rep.pixelsWide)
+        let h = CGFloat(rep.pixelsHigh)
+        if w > 0 && h > 0 { return CGSize(width: w, height: h) }
+    }
+    return image.size
+}
 
 struct ImageImportEditor: View {
     let platformImage: NSImage
@@ -13,10 +24,11 @@ struct ImageImportEditor: View {
 
     @State private var translation: CGSize = .zero
     @State private var scale: CGFloat = 1.0
-    @State private var rotation: Angle = .degrees(0) // reserved
-
     @State private var threshold: Double
     @State private var margin: Double
+
+    @State private var lastCanvasScale: CGFloat = 1.0
+    @State private var lastCanvasLogicalSize: CGSize = .zero
 
     init(platformImage: NSImage,
          glyphWidth: Int,
@@ -49,40 +61,20 @@ struct ImageImportEditor: View {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color.secondary.opacity(0.08))
 
-                    // Canvas area representing glyph logical pixels
-                    let canvasLogicalSize = CGSize(width: glyphWidth, height: glyphHeight)
-                    let canvasScale = computeCanvasScale(available: geo.size, logical: canvasLogicalSize)
-                    let canvasViewSize = CGSize(width: canvasLogicalSize.width * canvasScale,
-                                                height: canvasLogicalSize.height * canvasScale)
-
-                    // Draw baseline
-                    VStack { Spacer(minLength: 0) }
-                        .frame(width: canvasViewSize.width, height: canvasViewSize.height)
-                        .overlay(alignment: .topLeading) {
-                            Path { p in
-                                let y = CGFloat(baseline) * canvasScale + canvasScale / 2
-                                p.addRect(CGRect(x: 0, y: y, width: canvasViewSize.width, height: 1))
-                            }
-                            .stroke(Color.red.opacity(0.7), lineWidth: 1)
-                        }
-
-                    // Grid outline
-                    RoundedRectangle(cornerRadius: 2)
-                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                        .frame(width: canvasViewSize.width, height: canvasViewSize.height)
-
-                    // Image layer with transform
-                    TransformableImage(platformImage: platformImage,
-                                       canvasScale: canvasScale,
-                                       canvasViewSize: canvasViewSize,
-                                       translation: $translation,
-                                       scale: $scale)
+                    CanvasLayer(platformImage: platformImage,
+                                glyphWidth: glyphWidth,
+                                glyphHeight: glyphHeight,
+                                baseline: baseline,
+                                geoSize: geo.size,
+                                translation: $translation,
+                                scale: $scale,
+                                threshold: threshold) { scaleVal, logicalSize in
+                        lastCanvasScale = scaleVal
+                        lastCanvasLogicalSize = logicalSize
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(8)
-                .onAppear {
-                    initializeTransformToFit(canvasLogicalSize: canvasLogicalSize)
-                }
             }
             .frame(minHeight: 360)
 
@@ -104,10 +96,9 @@ struct ImageImportEditor: View {
                 Button("Cancel") { onCancel() }
                 Spacer()
                 Button("Apply") {
-                    // Convert image current frame to canvas coordinates
-                    let logical = CGSize(width: glyphWidth, height: glyphHeight)
-                    let canvasScale = computeCanvasScale(available: CGSize(width: 800, height: 600), logical: logical) // recompute
-                    let imageSize = platformImage.size
+                    // Use lastCanvasScale for consistent scaling
+                    let canvasScale = lastCanvasScale
+                    let imageSize = pixelSize(of: platformImage)
                     let scaledSize = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
                     // translation is origin in canvasView coords (scaled)
                     let rectInView = CGRect(origin: CGPoint(x: translation.width, y: translation.height), size: scaledSize)
@@ -125,7 +116,7 @@ struct ImageImportEditor: View {
 
     private func initializeTransformToFit(canvasLogicalSize: CGSize) {
         // Fit image into glyph canvas initially
-        let img = platformImage.size
+        let img = pixelSize(of: platformImage)
         let canvas = canvasLogicalSize
         guard img.width > 0 && img.height > 0 else { return }
         let sx = canvas.width / img.width
@@ -148,24 +139,84 @@ struct ImageImportEditor: View {
     }
 }
 
+private func computeCanvasScale(available: CGSize, logical: CGSize) -> CGFloat {
+    let padding: CGFloat = 40
+    let maxW = max(1, available.width - padding)
+    let maxH = max(1, available.height - padding)
+    let sx = maxW / max(1, logical.width)
+    let sy = maxH / max(1, logical.height)
+    return min(sx, sy)
+}
+
+private struct CanvasLayer: View {
+    let platformImage: NSImage
+    let glyphWidth: Int
+    let glyphHeight: Int
+    let baseline: Int
+    let geoSize: CGSize
+    @Binding var translation: CGSize
+    @Binding var scale: CGFloat
+    let threshold: Double
+    var onComputed: (CGFloat, CGSize) -> Void
+
+    var body: some View {
+        let canvasLogicalSize = CGSize(width: glyphWidth, height: glyphHeight)
+        let canvasScale = computeCanvasScale(available: geoSize, logical: canvasLogicalSize)
+        let canvasViewSize = CGSize(width: canvasLogicalSize.width * canvasScale,
+                                    height: canvasLogicalSize.height * canvasScale)
+        return ZStack {
+            // Draw baseline
+            VStack { Spacer(minLength: 0) }
+                .frame(width: canvasViewSize.width, height: canvasViewSize.height)
+                .overlay(alignment: .topLeading) {
+                    Path { p in
+                        let y = CGFloat(baseline) * canvasScale + canvasScale / 2
+                        p.addRect(CGRect(x: 0, y: y, width: canvasViewSize.width, height: 1))
+                    }
+                    .stroke(Color.red.opacity(0.7), lineWidth: 1)
+                }
+
+            // Grid outline
+            RoundedRectangle(cornerRadius: 2)
+                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                .frame(width: canvasViewSize.width, height: canvasViewSize.height)
+
+            // Image layer with transform
+            TransformableImage(platformImage: platformImage,
+                               canvasScale: canvasScale,
+                               canvasViewSize: canvasViewSize,
+                               translation: $translation,
+                               scale: $scale,
+                               threshold: threshold)
+        }
+        .onAppear { onComputed(canvasScale, canvasLogicalSize) }
+        .onChange(of: geoSize) { newSize in
+            let newScale = computeCanvasScale(available: newSize, logical: canvasLogicalSize)
+            onComputed(newScale, canvasLogicalSize)
+        }
+    }
+}
+
 private struct TransformableImage: View {
     let platformImage: NSImage
     let canvasScale: CGFloat
     let canvasViewSize: CGSize
     @Binding var translation: CGSize // in view points (canvas space scaled)
     @Binding var scale: CGFloat
+    let threshold: Double
 
-    @State private var currentDrag: CGSize = .zero
+    @State private var dragStartTranslation: CGSize = .zero
+    @State private var dragStartLocation: CGPoint = .zero
     @State private var currentMagnification: CGFloat = 1.0
 
     var body: some View {
-        let imageSize = platformImage.size
+        let imageSize = pixelSize(of: platformImage)
         let scaledSize = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
         let origin = CGPoint(x: translation.width, y: translation.height)
 
         return ZStack(alignment: .topLeading) {
-            // Image content
-            Image(nsImage: platformImage)
+            // Image content - thresholded preview
+            Image(nsImage: thresholdedNSImage)
                 .resizable()
                 .interpolation(.none)
                 .frame(width: scaledSize.width, height: scaledSize.height)
@@ -189,19 +240,26 @@ private struct TransformableImage: View {
     private func dragGesture() -> some Gesture {
         DragGesture()
             .onChanged { v in
-                translation = CGSize(width: translation.width + v.translation.width - currentDrag.width,
-                                      height: translation.height + v.translation.height - currentDrag.height)
-                currentDrag = v.translation
+                if v.startLocation == .zero { return }
+                if dragStartLocation == .zero {
+                    dragStartLocation = v.startLocation
+                    dragStartTranslation = translation
+                }
+                translation = CGSize(width: dragStartTranslation.width + (v.location.x - dragStartLocation.x),
+                                     height: dragStartTranslation.height + (v.location.y - dragStartLocation.y))
             }
-            .onEnded { _ in currentDrag = .zero }
+            .onEnded { _ in
+                dragStartLocation = .zero
+            }
     }
 
     private func magnifyGesture() -> some Gesture {
         MagnificationGesture()
             .onChanged { value in
-                let newScale = min(20.0, max(0.05, scale * (value / currentMagnification)))
-                scale = newScale
+                let delta = value / currentMagnification
                 currentMagnification = value
+                let newScale = min(10.0, max(0.05, scale * delta))
+                scale = newScale
             }
             .onEnded { _ in currentMagnification = 1.0 }
     }
@@ -235,32 +293,65 @@ private struct TransformableImage: View {
         // Uniform scale for corners, axis scale for edges relative to top-left origin
         let minScale: CGFloat = 0.05
         let maxScale: CGFloat = 20.0
-        let img = platformImage.size
+        let img = pixelSize(of: platformImage)
+
+        let dx = delta.width / 2
+        let dy = delta.height / 2
+
         var newScale = scale
         switch kind {
         case .topLeft:
-            newScale = scale * (1 - (delta.width + delta.height) / max(img.width + img.height, 1))
-            translation = CGSize(width: translation.width + delta.width, height: translation.height + delta.height)
+            // uniform scale based on average dx+dy
+            newScale = scale * (1 - (dx + dy) / max(img.width + img.height, 1))
+            translation = CGSize(width: translation.width + dx, height: translation.height + dy)
         case .topRight:
-            newScale = scale * (1 + (delta.width - delta.height) / max(img.width + img.height, 1))
-            translation = CGSize(width: translation.width, height: translation.height + delta.height)
+            newScale = scale * (1 + (dx - dy) / max(img.width + img.height, 1))
+            translation = CGSize(width: translation.width, height: translation.height + dy)
         case .bottomLeft:
-            newScale = scale * (1 + (-delta.width + delta.height) / max(img.width + img.height, 1))
-            translation = CGSize(width: translation.width + delta.width, height: translation.height)
+            newScale = scale * (1 + (-dx + dy) / max(img.width + img.height, 1))
+            translation = CGSize(width: translation.width + dx, height: translation.height)
         case .bottomRight:
-            newScale = scale * (1 + (delta.width + delta.height) / max(img.width + img.height, 1))
+            newScale = scale * (1 + (dx + dy) / max(img.width + img.height, 1))
         case .top:
-            newScale = scale * (1 - delta.height / max(img.height, 1))
-            translation = CGSize(width: translation.width, height: translation.height + delta.height)
+            newScale = scale * (1 - dy / max(img.height, 1))
+            translation = CGSize(width: translation.width, height: translation.height + dy)
         case .bottom:
-            newScale = scale * (1 + delta.height / max(img.height, 1))
+            newScale = scale * (1 + dy / max(img.height, 1))
         case .left:
-            newScale = scale * (1 - delta.width / max(img.width, 1))
-            translation = CGSize(width: translation.width + delta.width, height: translation.height)
+            newScale = scale * (1 - dx / max(img.width, 1))
+            translation = CGSize(width: translation.width + dx, height: translation.height)
         case .right:
-            newScale = scale * (1 + delta.width / max(img.width, 1))
+            newScale = scale * (1 + dx / max(img.width, 1))
         }
         scale = min(max(newScale, minScale), maxScale)
+    }
+
+    private var thresholdedNSImage: NSImage {
+        guard let tiffData = platformImage.tiffRepresentation else { return platformImage }
+        let ciContext = CIContext(options: nil)
+        guard let ciImage = CIImage(data: tiffData) else { return platformImage }
+
+        let monoFilter = CIFilter.colorControls()
+        monoFilter.inputImage = ciImage
+        monoFilter.saturation = 0
+
+        let exposureFilter = CIFilter.exposureAdjust()
+        exposureFilter.inputImage = monoFilter.outputImage
+        exposureFilter.ev = 0
+
+        let intermediate = exposureFilter.outputImage ?? ciImage
+
+        // Approximate threshold by adjusting gamma/power inversely related to threshold
+        let gammaFilter = CIFilter.gammaAdjust()
+        gammaFilter.inputImage = intermediate
+        gammaFilter.power = Float(max(0.1, min(5.0, 5 * (1 - threshold))))
+
+        let finalImage = gammaFilter.outputImage ?? intermediate
+
+        if let cgimg = ciContext.createCGImage(finalImage, from: finalImage.extent) {
+            return NSImage(cgImage: cgimg, size: .zero)
+        }
+        return platformImage
     }
 }
 
@@ -281,9 +372,3 @@ private struct ResizableHandle: View {
     }
 }
 
-private extension NSImage {
-    var size: CGSize {
-        return CGSize(width: self.representations.first?.pixelsWide ?? Int(super.size.width),
-                      height: self.representations.first?.pixelsHigh ?? Int(super.size.height))
-    }
-}

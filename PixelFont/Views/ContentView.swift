@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import Combine
+import AppKit
 
 struct ContentView: View {
     @EnvironmentObject private var document: FontDocumentViewModel
@@ -9,6 +10,8 @@ struct ContentView: View {
     
     @State private var showExport = false
     @State private var showImport = false
+    @State private var pendingImportImage: NSImage? = nil
+    @State private var showImportEditor: Bool = false
     @AppStorage("showBaseline") private var showBaseline: Bool = true
     @AppStorage("brushSize") private var brushSize: Int = 1
     
@@ -20,6 +23,10 @@ struct ContentView: View {
     @StateObject private var flags = ModifierFlagsMonitor()
     @AppStorage("previewTabSelection") private var previewTabSelection: Int = 0
     
+    // New state vars for duplicate alert
+    @State private var showDuplicateAlert = false
+    @State private var duplicateCodes: [UInt32] = []
+
     // All Adafruit printable characters (ASCII 0x20..0x7E)
     private let adafruitChars: [Character] = FontDocument.adafruitPrintableChars
     
@@ -131,6 +138,12 @@ struct ContentView: View {
                                 get: { previewPixelSize },
                                 set: { previewPixelSize = $0 }
                             ), in: 0.5...5, step: 0.5)
+                            
+                            Button("Export Preview (PDF)", systemImage: "square.and.arrow.up") {
+                                exportPreviewAsPDF()
+                            }
+                            .labelStyle(.iconOnly)
+                            .help("Export the current Text preview as a vector PDF")
                         }
                         
                         ScrollView(.horizontal, showsIndicators: true) {
@@ -157,6 +170,15 @@ struct ContentView: View {
                             ForEach(document.document.glyphs) { glyph in
                                 GlyphRow(glyph: glyph)
                                     .tag(glyph.id)
+                                    .background(
+                                        Group {
+                                            if let ch = glyph.character, document.document.isDuplicate(ch) {
+                                                Color.red.opacity(0.18)
+                                            } else {
+                                                Color.clear
+                                            }
+                                        }
+                                    )
                                     .onTapGesture { document.select(glyph) }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                         Button {
@@ -197,7 +219,10 @@ struct ContentView: View {
                     ScrollView {
                         let cols = [GridItem(.adaptive(minimum: 44), spacing: 8, alignment: .topLeading)]
                         LazyVGrid(columns: cols, spacing: 8) {
-                            ForEach(adafruitChars, id: \.self) { ch in
+                            // Build grid source = predefined Adafruit set ∪ user-defined glyph characters
+                            let userChars: [Character] = document.document.glyphs.compactMap { $0.character }
+                            let gridChars: [Character] = Array(Set(adafruitChars + userChars)).sorted { String($0) < String($1) }
+                            ForEach(gridChars, id: \.self) { ch in
                                 let glyph = document.document.glyphs.first(where: { $0.character == ch })
                                 Button {
                                     if let g = glyph {
@@ -251,7 +276,7 @@ struct ContentView: View {
                                 }
                                 .contentShape(Rectangle())
                                 .buttonStyle(.plain)
-                                .help(glyph != nil ? "Edit glyph \(ch)" : "Create glyph \(ch)")
+                                .help(glyph != nil ? "Edit glyph \(ch.description)" : "Create glyph \(ch.description)")
                             }
                         }
                         .padding(.vertical, 4)
@@ -260,7 +285,6 @@ struct ContentView: View {
                                        Label("Grid", systemImage: "rectangle.grid.2x2")
                                    }
                     
-//
                     .tag(1)
                 }
                 
@@ -270,7 +294,7 @@ struct ContentView: View {
             .frame(minWidth: 280)
         } detail: {
             
-            VStack(spacing: 16) {
+            VStack(alignment: .center, spacing: 16) {
                 
                 Spacer()
                 
@@ -293,11 +317,11 @@ struct ContentView: View {
                 HStack(spacing: 20) {
                     
                     // Tiny placeholder of selected character in the top-right corner
-                    ZStack {
-                        Color.clear
-                    }
-                    .frame(height: 0)
-                    .overlay(alignment: .trailing) {
+//                    ZStack {
+//                        Color.clear
+//                    }
+//                    .frame(height: 0)
+//                    .overlay(alignment: .trailing) {
                         if let currentChar = document.selectedGlyph?.character {
                             ZStack {
                                 RoundedRectangle(cornerRadius: 6)
@@ -328,7 +352,7 @@ struct ContentView: View {
                             .frame(width: 40, height: 40)
                             .padding(2)
                         }
-                    }
+//                    }
                     
                     
                     HStack {
@@ -572,7 +596,13 @@ struct ContentView: View {
                 showImport.toggle()
             }
             Button("Export", systemImage: "arrow.up.doc") {
-                showExport.toggle()
+                let dup = document.document.duplicateCharacterCodes()
+                if dup.isEmpty {
+                    showExport.toggle()
+                } else {
+                    self.duplicateCodes = dup.sorted()
+                    self.showDuplicateAlert = true
+                }
             }
         }
         
@@ -582,15 +612,42 @@ struct ContentView: View {
         }
         
         .sheet(isPresented: $showImport) {
-            ImageImportPanel { url in
-                if let url, let img = NSImage(contentsOf: url) {
-                    document.importImageToSelectedGlyph(platformImage: img, undoManager: undoManager)
-                }
-                showImport = false
-            }
-            .frame(width: 420, height: 200)
+            ImageImportPickerSheet(showImport: $showImport, pendingImportImage: $pendingImportImage, showImportEditor: $showImportEditor)
         }
         
+        .sheet(isPresented: $showImportEditor) {
+            ImageImportEditorSheet(
+                image: pendingImportImage,
+                glyphWidth: document.document.glyphWidth,
+                glyphHeight: document.document.glyphHeight,
+                baseline: document.document.baseline,
+                initialThreshold: document.importThreshold,
+                initialMargin: document.importMargin,
+                showImportEditor: $showImportEditor,
+                undoManager: undoManager
+            )
+        }
+        
+        .alert("Doublons détectés", isPresented: $showDuplicateAlert) {
+            Button("Annuler", role: .cancel) { }
+            Button("Exporter quand même") {
+                showExport.toggle()
+            }
+        } message: {
+            Text(duplicateAlertMessage())
+        }
+        
+//        .onReceive(NotificationCenter.default.publisher(for: .fontDocumentFoundDuplicateCharacters)) { note in
+//            if let codes = note.userInfo?[FontDocumentDuplicateInfo.codesKey] as? [UInt32] {
+//                self.duplicateCodes = codes.sorted()
+//                self.showDuplicateAlert = true
+//            }
+//        }
+//        .alert("Doublons détectés", isPresented: $showDuplicateAlert) {
+//            Button("OK", role: .cancel) { }
+//        } message: {
+//            Text(duplicateAlertMessage())
+//        }
         
         .onChange(of: document.document.glyphs) {
             guard let char = document.document.glyphs.last?.character else { return }
@@ -614,8 +671,20 @@ struct ContentView: View {
             }
             widthString = String(document.document.glyphWidth)
             heightString = String(document.document.glyphHeight)
+//            document.document.notifyDuplicatesIfNeeded()
         }
         
+    }
+    
+    private func duplicateAlertMessage() -> String {
+        let parts = duplicateCodes.compactMap { code -> String in
+            if let scalar = UnicodeScalar(code), scalar.isASCII, code >= 0x20, code <= 0x7E {
+                return "'\(Character(scalar))' (0x\(String(format: "%02X", code)))"
+            } else {
+                return "0x\(String(format: "%02X", code))"
+            }
+        }
+        return parts.isEmpty ? "Aucun doublon." : parts.joined(separator: ", ")
     }
     
     private func addGlyphIfNeeded() {
@@ -641,6 +710,81 @@ struct ContentView: View {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(jsonString, forType: .string)
+    }
+    
+    private func exportPreviewAsPDF() {
+        // 1) Prepare save panel
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.allowsOtherFileTypes = false
+        panel.canCreateDirectories = true
+        let defaultName = (document.document.name.isEmpty ? "Preview" : document.document.name)
+            .replacingOccurrences(of: " ", with: "_") + "_preview.pdf"
+        panel.nameFieldStringValue = defaultName
+        panel.title = "Export Preview as PDF"
+        panel.message = "Choose a location to save the vector PDF of the current preview"
+        panel.prompt = "Export"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        // 2) Compute canvas dimensions like TextGlyphPreview
+        let sample = previewSample
+        let glyphs = document.document.glyphs
+        let baseWidth = document.document.glyphWidth
+        let baseHeight = document.document.glyphHeight
+        let pixelSize = CGFloat(previewPixelSize)
+
+        let advances: [Int] = sample.map { ch in
+            if let g = glyphs.first(where: { $0.character == ch }) {
+                return max(1, baseWidth + g.advanceWidthOffset)
+            } else {
+                return baseWidth
+            }
+        }
+        var penX = 2
+        let margin = CGFloat(penX) * 2 * pixelSize
+        let totalAdvance = max(1, advances.reduce(0, +))
+        let canvasWidthPx = totalAdvance
+        let canvasHeightPx = baseHeight
+        let width = CGFloat(canvasWidthPx) * pixelSize + (margin * 3)
+        let height = CGFloat(canvasHeightPx) * pixelSize + (margin * 2)
+
+        // 3) Create PDF context and draw rectangles for active pixels
+        guard let consumer = CGDataConsumer(url: url as CFURL) else { return }
+        var mediaBox = CGRect(x: 0, y: 0, width: width, height: height)
+        guard let ctx = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else { return }
+        ctx.beginPDFPage(nil)
+
+        // Flip vertical pour correspondre au repère de Canvas/SwiftUI
+        ctx.translateBy(x: 0, y: height)
+        ctx.scaleBy(x: 1, y: -1)
+        
+        // Fill color uses primary/label color
+        ctx.setFillColor(NSColor.labelColor.cgColor)
+
+        
+        for ch in sample {
+            if let g = glyphs.first(where: { $0.character == ch }) {
+                let startRow = g.viewOffsetY
+                let startCol = g.viewOffsetX
+                for row in 0..<g.height {
+                    let targetRow = row - startRow
+                    let rowPixels = g.pixels[row]
+                    for col in 0..<rowPixels.count where rowPixels[col] {
+                        let targetCol = col - startCol
+                        let x = CGFloat(penX + targetCol) * pixelSize + margin
+                        let y = CGFloat(targetRow) * pixelSize + margin
+                        let rect = CGRect(x: x, y: y, width: pixelSize, height: pixelSize)
+                        ctx.fill(rect)
+                    }
+                }
+                penX += max(1, baseWidth + g.advanceWidthOffset)
+            } else {
+                penX += baseWidth
+            }
+        }
+
+        ctx.endPDFPage()
+        ctx.closePDF()
     }
 }
 
@@ -675,61 +819,6 @@ private struct GlyphRow: View {
         }
     }
 }
-
-import AppKit
-private struct ImageImportPanel: View {
-    @EnvironmentObject private var document: FontDocumentViewModel
-    
-    var onComplete: (_ url: URL?) -> Void
-    @State private var threshold: Double = 0.5
-    @State private var margin: Double = 0.0
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            Text("Import an image into glyph")
-                .font(.headline)
-            Text("Choose an image; it will be resized to the glyph size and thresholded.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            HStack {
-                Text("Threshold")
-                Slider(value: $threshold, in: 0...1)
-                Text(String(format: "%.2f", threshold))
-                    .monospacedDigit()
-            }
-            .onChange(of: threshold) { document.importThreshold = threshold }
-            HStack {
-                Text("Margin")
-                Slider(value: $margin, in: 0...0.45)
-                Text(String(format: "%.2f", margin))
-                    .monospacedDigit()
-            }
-            .onChange(of: margin) { document.importMargin = margin }
-            HStack {
-                Button("Choose an image…") {
-                    let panel = NSOpenPanel()
-                    panel.allowedContentTypes = [.png, .jpeg, .tiff]
-                    panel.allowsMultipleSelection = false
-                    panel.begin { resp in
-                        if resp == .OK { onComplete(panel.url) }
-                    }
-                }
-                Button("Import") {
-                    // No-op: Import is triggered by choosing image. Keep for UX.
-                }
-                Button("Close") {
-                    onComplete(nil)
-                }
-            }
-        }
-        .padding()
-        .onAppear {
-            threshold = document.importThreshold
-            margin = document.importMargin
-        }
-    }
-}
-
 
 final class ModifierFlagsMonitor: ObservableObject {
     @Published var isCommandPressed: Bool = false
@@ -768,7 +857,7 @@ struct TextGlyphPreview: View {
         let canvasHeight = baseHeight
         
         Canvas { context, _ in
-            var penX = 20
+            var penX = 5
             for ch in sample {
                 if let g = glyphs.first(where: { $0.character == ch }) {
                     // Updated pixel rendering logic using vertical and horizontal framing from GlyphCanvasView
@@ -796,19 +885,74 @@ struct TextGlyphPreview: View {
                 }
             }
             
-            //            // Draw baseline across the whole preview
-            //            let baselineY = CGFloat(baseline + 1) * pixelSize - 0.5
-            //            let basePath = Path(CGRect(x: 0, y: baselineY, width: CGFloat(canvasWidth) * pixelSize, height: 1))
-            //            context.fill(basePath, with: .color(.red.opacity(0.8)))
         }
         .frame(
-            width: CGFloat(canvasWidth) * pixelSize + 40,
+            width: CGFloat(canvasWidth) * pixelSize + (5 * pixelSize) ,
             height: CGFloat(canvasHeight) * pixelSize + 30,
-            alignment: .topTrailing
+            alignment: .topLeading
         )
-        //        .background(
-        //            RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.2))
-        //        )
+        
+    }
+}
+
+private struct ImageImportPickerSheet: View {
+    @Binding var showImport: Bool
+    @Binding var pendingImportImage: NSImage?
+    @Binding var showImportEditor: Bool
+    var body: some View {
+        VStack(spacing: 20) {
+            Button("Choose an image…") {
+                let panel = NSOpenPanel()
+                panel.allowedContentTypes = [.png, .jpeg, .tiff]
+                panel.allowsMultipleSelection = false
+                panel.begin { resp in
+                    if resp == .OK, let url = panel.url, let img = NSImage(contentsOf: url) {
+                        pendingImportImage = img
+                        showImportEditor = true
+                        showImport = false
+                    }
+                }
+            }
+            Button("Cancel") { showImport = false }
+        }
+        .padding()
+        .frame(width: 420, height: 150)
+    }
+}
+
+private struct ImageImportEditorSheet: View {
+    @EnvironmentObject private var document: FontDocumentViewModel
+    let image: NSImage?
+    let glyphWidth: Int
+    let glyphHeight: Int
+    let baseline: Int
+    let initialThreshold: Double
+    let initialMargin: Double
+    @Binding var showImportEditor: Bool
+    let undoManager: UndoManager?
+
+    var body: some View {
+        Group {
+            if let image {
+                ImageImportEditor(
+                    platformImage: image,
+                    glyphWidth: glyphWidth,
+                    glyphHeight: glyphHeight,
+                    baseline: baseline,
+                    initialThreshold: initialThreshold,
+                    initialMargin: initialMargin,
+                    onApply: { image, frameInCanvas, scale, threshold, margin in
+                        document.importImageToSelectedGlyph(platformImage: image, threshold: threshold, margin: margin, undoManager: undoManager)
+                        showImportEditor = false
+                    },
+                    onCancel: { showImportEditor = false }
+                )
+                .frame(minWidth: 600, minHeight: 460)
+            } else {
+                Text("No image selected")
+                    .frame(minWidth: 400, minHeight: 200)
+            }
+        }
     }
 }
 

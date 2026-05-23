@@ -11,10 +11,24 @@
 		32B8CCC82F012866000C25FD /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 32B8CCC52F012866000C25FD /* LICENSE */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		329FD8632F1D8FC8009EF0CB /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		327009352EFB4C3D0040FC5F /* PixelFont.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PixelFont.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		32B8CCC52F012866000C25FD /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
 		32B8CCC62F012866000C25FD /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		32F051A52F1A525F00A33700 /* Quartz.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Quartz.framework; path = System/Library/Frameworks/Quartz.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -55,6 +69,7 @@
 				32B8CCC52F012866000C25FD /* LICENSE */,
 				32B8CCC62F012866000C25FD /* README.md */,
 				327009372EFB4C3D0040FC5F /* PixelFont */,
+				32F051A42F1A525F00A33700 /* Frameworks */,
 				327009362EFB4C3D0040FC5F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -67,6 +82,14 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		32F051A42F1A525F00A33700 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				32F051A52F1A525F00A33700 /* Quartz.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -77,6 +100,7 @@
 				327009312EFB4C3D0040FC5F /* Sources */,
 				327009322EFB4C3D0040FC5F /* Frameworks */,
 				327009332EFB4C3D0040FC5F /* Resources */,
+				329FD8632F1D8FC8009EF0CB /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -277,6 +301,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = "$(BUILD_NUMBER)";
@@ -305,8 +330,9 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = "$(VERSION)";
-				PRODUCT_BUNDLE_IDENTIFIER = GI.dimitrifontaine.pixelFont;
+				PRODUCT_BUNDLE_IDENTIFIER = GI.dimitrifontaine.pixelfont;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
@@ -331,6 +357,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = "$(BUILD_NUMBER)";
@@ -359,8 +386,9 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = "$(VERSION)";
-				PRODUCT_BUNDLE_IDENTIFIER = GI.dimitrifontaine.pixelFont;
+				PRODUCT_BUNDLE_IDENTIFIER = GI.dimitrifontaine.pixelfont;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;

@@ -5,15 +5,25 @@
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
+			<key>CFBundleIconName</key>
+			<string>fileIcon</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>pixf</string>
+			</array>
+			<key>CFBundleTypeIconFile</key>
+			<string></string>
+			<key>CFBundleTypeIconSystemGenerated</key>
+			<true/>
 			<key>CFBundleTypeName</key>
-			<string>Pixel Font</string>
+			<string>PixelFont Document</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>gi.dimitrifontaine.pixelfont.pixf</string>
+				<string>gi.dimitrifontaine.pixelfont-doc.pixf</string>
 			</array>
 		</dict>
 	</array>
@@ -22,12 +32,14 @@
 		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>
-				<string>public.json</string>
+				<string>public.data</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>Pixel Font Document</string>
+			<string>PixelFont Document</string>
+			<key>UTTypeIcons</key>
+			<dict/>
 			<key>UTTypeIdentifier</key>
-			<string>gi.dimitrifontaine.pixelfont.pixf</string>
+			<string>gi.dimitrifontaine.pixelfont-doc.pixf</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>

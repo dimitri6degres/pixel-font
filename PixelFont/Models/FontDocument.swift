@@ -1,5 +1,13 @@
 import Foundation
 
+extension Notification.Name {
+    static let fontDocumentFoundDuplicateCharacters = Notification.Name("FontDocumentFoundDuplicateCharacters")
+}
+
+struct FontDocumentDuplicateInfo {
+    static let codesKey = "codes" // [UInt32]
+}
+
 struct FontDocument: Identifiable, Equatable {
     let id: UUID
     var name: String
@@ -25,7 +33,7 @@ struct FontDocument: Identifiable, Equatable {
         self.glyphs = glyphs
         self.baseline = max(0, min(glyphHeight, baseline))
     }
-
+    
     // Adafruit GFX export ordering: printable ASCII 0x20 (space) to 0x7E (~)
     static let adafruitPrintableScalars: [UnicodeScalar] = (0x20...0x7E).compactMap { UnicodeScalar($0) }
     static let adafruitPrintableChars: [Character] = adafruitPrintableScalars.map(Character.init)
@@ -112,6 +120,40 @@ extension Glyph {
 }
 
 extension FontDocument {
+    // Returns the set of Unicode scalar values that appear more than once among glyphs with a character.
+    func duplicateCharacterCodes() -> Set<UInt32> {
+        var seen: Set<UInt32> = []
+        var duplicates: Set<UInt32> = []
+        for g in glyphs {
+            guard let scalar = g.character?.unicodeScalars.first else { continue }
+            let v = scalar.value
+            if !seen.insert(v).inserted {
+                duplicates.insert(v)
+            }
+        }
+        return duplicates
+    }
+
+    // Returns the set of duplicate Characters (if representable) for convenience in UI.
+    func duplicateCharacters() -> [Character] {
+        duplicateCharacterCodes().compactMap { UnicodeScalar($0) }.map(Character.init)
+    }
+
+    // Indicates if a given glyph (by its Character) is duplicate.
+    func isDuplicate(_ ch: Character) -> Bool {
+        guard let code = ch.unicodeScalars.first?.value else { return false }
+        return duplicateCharacterCodes().contains(code)
+    }
+
+    // Posts a Notification if duplicate characters are present.
+    func notifyDuplicatesIfNeeded() {
+        let dup = duplicateCharacterCodes()
+        guard !dup.isEmpty else { return }
+        NotificationCenter.default.post(name: .fontDocumentFoundDuplicateCharacters,
+                                        object: self,
+                                        userInfo: [FontDocumentDuplicateInfo.codesKey: Array(dup)])
+    }
+
     func exportAdafruitGFX(fontName rawName: String, options: ExportOptions = ExportOptions()) -> String {
         let document = self
 
@@ -148,8 +190,23 @@ extension FontDocument {
         let firstChar = presentGlyphs.map { $0.0 }.min() ?? 0x20
         let lastChar = presentGlyphs.map { $0.0 }.max() ?? 0x7E
 
+        let duplicateCodes: Set<UInt32> = self.duplicateCharacterCodes()
+        let duplicateComments: [String] = duplicateCodes.sorted().map { code in
+            if let scalar = UnicodeScalar(code), scalar.isASCII, code >= 0x20, code <= 0x7E {
+                return "'\(Character(scalar))' (0x\(String(format: "%02X", code)))"
+            } else {
+                return "0x\(String(format: "%02X", code))"
+            }
+        }
+        // Notify observers (e.g., UI) that duplicates exist, so they can present an alert.
+        if !duplicateCodes.isEmpty {
+            NotificationCenter.default.post(name: .fontDocumentFoundDuplicateCharacters,
+                                            object: self,
+                                            userInfo: [FontDocumentDuplicateInfo.codesKey: Array(duplicateCodes)])
+        }
+
         // Create dictionary for quick lookup
-        let glyphMap: [UInt32: Glyph] = Dictionary(uniqueKeysWithValues: presentGlyphs)
+        let glyphMap: [UInt32: Glyph] = Dictionary(presentGlyphs, uniquingKeysWith: { first, _ in first })
 
         struct G {
             let code: UInt32
@@ -290,6 +347,11 @@ extension FontDocument {
         out.append("#include <Arduino.h>")
         out.append("#include <Adafruit_GFX.h>")
         out.append("")
+        if !duplicateCodes.isEmpty {
+            out.append("// WARNING: Duplicate character definitions detected for: ")
+            out.append("//   " + duplicateComments.joined(separator: ", "))
+            out.append("")
+        }
         let progmem = options.usePROGMEM ? " PROGMEM" : ""
 
         // Bitmap array
@@ -317,7 +379,8 @@ extension FontDocument {
             } else {
                 charComment = "<0x\(String(format: "%02X", g.code))>"
             }
-            out.append(String(format: "\(tab){ %d, %d, %d, %d, %d, %d }, // %@", g.bitmapOffset, g.width, g.height, g.xAdvance, g.xOffset, g.yOffset, charComment))
+            let dupMark = duplicateCodes.contains(g.code) ? " [DUP]" : ""
+            out.append(String(format: "\(tab){ %d, %d, %d, %d, %d, %d }, // %@%@", g.bitmapOffset, g.width, g.height, g.xAdvance, g.xOffset, g.yOffset, charComment, dupMark))
         }
         out.append("};")
         out.append("")
